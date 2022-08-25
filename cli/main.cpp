@@ -125,6 +125,31 @@ auto parse_args(int argc, char** argv) {
 
 	return config;
 }
+
+auto ttime_netcdf_writing(t8_forest_t forest, sc_MPI_Comm comm, Config config) {
+	sc_MPI_Barrier(comm);
+	// Wtime is guaranteed to be monotonic
+	const auto start_time = sc_MPI_Wtime();
+
+	/* Write out the forest in netCDF format using the extended function which
+	 * allows to set a specific variable storage and access pattern. */
+	t8_forest_write_netcdf_ext(
+		forest, "t8_netcdf_performance_test",
+		"T8 NetCDF writing Performance Test", 3, 0, nullptr, comm,
+		config.netcdf_var_storage_mode, nullptr, config.netcdf_mpi_access,
+		config.fill_mode, config.cmode, config.file_per_process_mode
+	);
+
+	const auto end_time = sc_MPI_Wtime();
+	const double seconds = end_time - start_time;
+	double global_seconds_max;
+	int retval = sc_MPI_Reduce(
+		&seconds, &global_seconds_max, 1, sc_MPI_DOUBLE, sc_MPI_MAX, 0, comm
+	);
+	if (retval != MPI::SUCCESS) {
+		throw std::runtime_error{"failed calculating the total runtime"};
+	}
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -138,16 +163,16 @@ int main(int argc, char** argv) {
 
 		auto forest = config.scenario->make_forest();
 
-		add_variables(forest);
+		add_variables(config.num_element_wise_variables, forest);
 
 		time_writing_netcdf(config, forest);
-
-		unref(forest);
 
 	} catch (const std::exception& e) {
 		t8_productionf(e.what());
 		exit_code = EXIT_FAILURE;
 	}
+
+	unref(forest);
 
 	sc_finalize();
 	MPI_Finalize();
