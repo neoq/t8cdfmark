@@ -5,16 +5,20 @@
 #include <sc_options.h>
 #include <t8.h>
 
-#include "scenarios/pseudo_random.hpp"
 #include "scenarios/scenario.hpp"
+#include "get_scenarios.hpp"
 
 #include <algorithm>
 #include <cstdio>
 #include <iostream>
 #include <memory>
+#include <string_view>
 #include <vector>
 
+using std::string_view_literals;
+
 namespace {
+
 struct Config {
 	std::unique_ptr<t8cdfmark::Scenario> scenario;
 	int netcdf_var_storage_mode;
@@ -23,14 +27,6 @@ struct Config {
 	int cmode;
 	bool file_per_process_mode = false;
 };
-
-auto get_scenarios() {
-	std::vector<std::unique_ptr<t8cdfmark::Scenario>> scenarios;
-	scenarios.push_back(
-		std::make_unique<scenarios::pseudo_random>("pseudo_random")
-	);
-	return scenarios;
-}
 
 auto parse_args(int argc, char** argv) {
 	auto opts = std::unique_ptr{sc_options_new(argv[0]), sc_options_destroy};
@@ -41,6 +37,8 @@ auto parse_args(int argc, char** argv) {
 	const char* mpi_access = "collective";
 	const char* netcdf_ver = "netcdf4_hdf5";
 	const char* scenario_name = "pseudo_random";
+
+	// TODO: implement help switch myself
 
 	sc_options_add_switch(opts.get(), 'f', "fill", &fill, "Activate NC_FILL");
 	sc_options_add_string(
@@ -67,7 +65,7 @@ auto parse_args(int argc, char** argv) {
 		auto scenario_opts = scenario->make_options();
 		// i think this function copies the options and does not take ownership
 		sc_options_add_suboptions(
-			opts.get(), scenario_opts.get(), scenario.id.c_str()
+			opts.get(), scenario_opts.get(), scenario->id.c_str()
 		);
 	}
 
@@ -93,7 +91,37 @@ auto parse_args(int argc, char** argv) {
 		throw std::runtime_error{"scenario not known"};
 	}
 
-	Config config{.scenario = std::move(*matched_scenario_it)};
+	Config config{
+		.fill_mode = fill ? NC_FILL : NC_NOFILL,
+		.scenario = std::move(*matched_scenario_it)};
+
+	if (mpi_access == "NC_INDEPENDENT"sv) {
+		config.netcdf_mpi_access = NC_INDEPENDENT;
+	} else if (mpi_access == "NC_COLLECTIVE"sv) {
+		config.netcdf_mpi_access = NC_COLLECTIVE;
+	} else if (mpi_access == "file_per_process"sv) {
+		config.file_per_process_mode = true;
+	} else {
+		throw std::runtime_error{"this argument is either NC_COLLECTIVE, "
+		                         "NC_INDEPENDENT, or file_per_process"};
+	}
+	if (storage_mode == "NC_CONTIGUOUS"sv) {
+		config.netcdf_var_storage_mode = NC_CONTIGUOUS;
+	} else if (storage_mode == "NC_CHUNKED"sv) {
+		config.netcdf_var_storage_mode = NC_CHUNKED;
+	} else {
+		throw std::runtime_error{
+			"storage mode must be one of NC_CONTIGUOUS and NC_CHUNKED"};
+	}
+	if (netcdf_ver == "cdf5") {
+		config.cmode = NC_64BIT_DATA;
+	} else if (netcdf_ver == "netcdf4_hdf5") {
+		config.cmode = NC_NETCDF4;
+	} else {
+		throw std::runtime_error{
+			"cmode must be one of \"cdf5\" and \"netcdf4_hdf5\""};
+	}
+
 	return config;
 }
 } // namespace
