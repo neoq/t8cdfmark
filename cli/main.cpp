@@ -5,8 +5,9 @@
 #include <sc_options.h>
 #include <t8.h>
 
-#include "scenarios/scenario.hpp"
 #include "get_scenarios.hpp"
+#include "scenarios/scenario.hpp"
+#include "utils.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -29,7 +30,7 @@ struct Config {
 };
 
 auto parse_args(int argc, char** argv) {
-	auto opts = std::unique_ptr{sc_options_new(argv[0]), sc_options_destroy};
+	auto opts = t8cdfmark::new_sc_options(argv[0]);
 
 	int fill = 0;
 	int num_element_wise_variables = 0;
