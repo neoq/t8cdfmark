@@ -8,6 +8,7 @@
 #include "scenarios/pseudo_random.hpp"
 #include "scenarios/scenario.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <iostream>
 #include <memory>
@@ -15,6 +16,7 @@
 
 namespace {
 struct Config {
+	std::unique_ptr<t8cdfmark::Scenario> scenario;
 	int netcdf_var_storage_mode;
 	int netcdf_mpi_access = NC_COLLECTIVE;
 	int fill_mode;
@@ -34,6 +36,7 @@ auto parse_args(int argc, char** argv) {
 	auto opts = std::unique_ptr{sc_options_new(argv[0]), sc_options_destroy};
 
 	int fill = 0;
+	int num_element_wise_variables = 0;
 	const char* storage_mode = "chunked";
 	const char* mpi_access = "collective";
 	const char* netcdf_ver = "netcdf4_hdf5";
@@ -54,34 +57,44 @@ auto parse_args(int argc, char** argv) {
 	sc_options_add_string(
 		opts.get(), 'z', "scenario", &scenario_name, "pseudo_random", "scenario"
 	);
+	sc_options_add_int(
+		opts.get(), 'v', "num_element_wise_variables",
+		&num_element_wise_variables, 0, "num_element_wise_variables"
+	);
 
 	auto scenarios = get_scenarios();
 	for (const auto& scenario : scenarios) {
-		sc_options_add_
+		auto scenario_opts = scenario->make_options();
+		// i think this function copies the options and does not take ownership
+		sc_options_add_suboptions(
+			opts.get(), scenario_opts.get(), scenario.id.c_str()
+		);
 	}
 
-	sc_options_print_usage(
-		t8_get_package_id(), SC_LP_ERROR, opts.get(), "asdfasdfasdfasdfasdfasdf"
-	);
 	const auto parse_result = sc_options_parse(
 		t8_get_package_id(), SC_LP_ERROR, opts.get(), argc, argv
 	);
-	if (parse_result == -1) {
-		return EXIT_FAILURE;
-	}
 	sc_options_print_summary(t8_get_package_id(), SC_LP_PRODUCTION, opts.get());
-
-	/*
-	Config<Scenarios...> config;
-	// general config options
-	// string option for scenario
-	(void(scenarios.add_options(opts)), ...);
-	// parse options
-
-	[] -> var_t {
-	    scenario == sce
+	if (parse_result == -1) {
+		sc_options_print_usage(
+			t8_get_package_id(), SC_LP_ERROR, opts.get(),
+			"asdfasdfasdfasdfasdfasdf"
+		);
+		throw std::runtime_error{"bad usage"};
 	}
-	*/
+
+	auto matched_scenario_it = std::find_if(
+		scenarios.begin(), scenarios.end(),
+		[scenario_name](auto& scenario) {
+			return scenario->id == scenario_name;
+		}
+	);
+	if (matched_scenario_it == scenarios.end()) {
+		throw std::runtime_error{"scenario not known"};
+	}
+
+	Config config{.scenario = std::move(*matched_scenario_it)};
+	return config;
 }
 } // namespace
 
@@ -89,17 +102,25 @@ int main(int argc, char** argv) {
 	MPI_Init(&argc, &argv); // TODO: error handling
 	sc_init(sc_MPI_COMM_WORLD, true, true, nullptr, SC_LP_ESSENTIAL);
 	t8_init(SC_LP_PRODUCTION);
+	int exit_code = EXIT_SUCCESS;
 
-	auto config = parse_args(argc, argv);
+	try {
+		auto config = parse_args(argc, argv);
 
-	auto forest = make_forest(config);
+		auto forest = config.scenario->make_forest();
 
-	add_variables(forest);
+		add_variables(forest);
 
-	time_writing_netcdf(forest);
+		time_writing_netcdf(config, forest);
 
-	unref(forest);
+		unref(forest);
+
+	} catch (const std::exception& e) {
+		t8_productionf(e.what());
+		exit_code = EXIT_FAILURE;
+	}
 
 	sc_finalize();
 	MPI_Finalize();
+	return exit_code;
 }
