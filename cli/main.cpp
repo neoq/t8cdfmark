@@ -219,10 +219,11 @@ int main(int argc, char** argv) {
 	t8_init(SC_LP_PRODUCTION);
 	int exit_code = EXIT_SUCCESS;
 
+	t8_forest_t forest = nullptr;
 	try {
 		auto config = parse_args(argc, argv);
 
-		auto forest = config.scenario->make_forest();
+		forest = config.scenario->make_forest();
 
 		auto element_wise_variables = make_element_wise_variables(
 			t8_forest_get_local_num_elements(forest),
@@ -236,8 +237,9 @@ int main(int argc, char** argv) {
 		exit_code = EXIT_FAILURE;
 	}
 
-	// TODO forest is not known here
-	unref(forest);
+	if (forest != nullptr) {
+		t8_forest_unref(&forest);
+	}
 
 	sc_finalize();
 	MPI_Finalize();
