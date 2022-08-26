@@ -14,8 +14,7 @@ struct pseudo_random : t8cdfmark::Scenario {
 
 	std::size_t desired_bytes = 1'073'741'824u;
 
-	std::unique_ptr<sc_options_t, decltype(sc_options_destroy)>
-	make_options() override;
+	unique_ptr_sc_options_t make_options() override;
 	t8_forest_t make_forest(sc_MPI_Comm comm) const override;
 };
 } // namespace scenarios

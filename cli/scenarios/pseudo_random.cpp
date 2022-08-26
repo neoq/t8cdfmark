@@ -1,7 +1,5 @@
 #include "pseudo_random.hpp"
 
-#include "../utils.hpp"
-
 namespace {
 
 /** calculates the minimum count of elements needed to consume bytes bytes
@@ -84,9 +82,8 @@ int t8_example_netcdf_adapt_fn(
 } // namespace
 
 namespace scenarios {
-std::unique_ptr<sc_options_t, decltype(sc_options_destroy)>
-pseudo_random::make_options() override {
-	auto opts = t8cdfmark::new_sc_options("");
+unique_ptr_sc_options_t pseudo_random::make_options() override {
+	auto opts = unique_ptr_sc_options_t{sc_new_options_new("")};
 	sc_options_add_size_t(
 		opts.get(), 'b', "bytes", &desired_bytes, 1'073'741'824u,
 		"desired bytes"
