@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string_view>
 #include <vector>
@@ -41,6 +42,7 @@ auto parse_args(int argc, char** argv) {
 
 	// TODO: implement help switch myself
 
+	// add common args:
 	sc_options_add_switch(opts.get(), 'f', "fill", &fill, "Activate NC_FILL");
 	sc_options_add_string(
 		opts.get(), 's', "storage_mode", &storage_mode, "chunked",
@@ -126,18 +128,37 @@ auto parse_args(int argc, char** argv) {
 	return config;
 }
 
-auto ttime_netcdf_writing(t8_forest_t forest, sc_MPI_Comm comm, Config config) {
+struct element_wise_variable {
+	std::vector<t8_nc_int64_t> data;
+	t8cdfmark::unique_ptr_sc_array_t data_view;
+	t8cdfmark::unique_ptr_t8_netcdf_variable_t netcdf_variable;
+};
+
+auto time_netcdf_writing(
+	t8_forest_t forest, sc_MPI_Comm comm, Config config,
+	const std::vector<element_wise_variable>& element_wise_variables
+) {
+	std::vector<t8_netcdf_variable_t*> netcdf_variables(
+		element_wise_variables.size()
+	);
+	std::transform(
+		element_wise_variables.cbegin(), element_wise_variables.cend(),
+		netcdf_variables.begin(),
+		[](const element_wise_variable& variable) {
+			return variable.netcdf_variable.get();
+		}
+	);
+
 	sc_MPI_Barrier(comm);
 	// Wtime is guaranteed to be monotonic
 	const auto start_time = sc_MPI_Wtime();
 
-	/* Write out the forest in netCDF format using the extended function which
-	 * allows to set a specific variable storage and access pattern. */
 	t8_forest_write_netcdf_ext(
 		forest, "t8_netcdf_performance_test",
-		"T8 NetCDF writing Performance Test", 3, 0, nullptr, comm,
-		config.netcdf_var_storage_mode, nullptr, config.netcdf_mpi_access,
-		config.fill_mode, config.cmode, config.file_per_process_mode
+		"T8 NetCDF writing Performance Test", 3, netcdf_variables.size(),
+		netcdf_variables.data(), comm, config.netcdf_var_storage_mode, nullptr,
+		config.netcdf_mpi_access, config.fill_mode, config.cmode,
+		config.file_per_process_mode
 	);
 
 	const auto end_time = sc_MPI_Wtime();
@@ -150,6 +171,46 @@ auto ttime_netcdf_writing(t8_forest_t forest, sc_MPI_Comm comm, Config config) {
 		throw std::runtime_error{"failed calculating the total runtime"};
 	}
 }
+
+template <typename Rne>
+auto make_element_wise_variable(t8_locidx_t num_local_elements, Rne& rne) {
+	element_wise_variable result{
+		std::vector<t8_nc_int64_t>(num_local_elements)};
+
+	{
+		auto dist = std::uniform_int_distribution<long long>{
+			std::numeric_limits<t8_nc_int64_t>::min(),
+			std::numeric_limits<t8_nc_int64_t>::max()};
+
+		for (auto& a : result.data) {
+			a = dist(rne);
+		}
+	}
+
+	result.data_view = t8cdfmark::unique_ptr_sc_array_t{sc_array_new_data(
+		result.data.data(), sizeof(t8_nc_int64_t), result.data.size()
+	)};
+	result.netcdf_variable =
+		t8cdfmark::unique_ptr_t8_netcdf_variable_t{t8_netcdf_create_var(
+			T8_NETCDF_INT64, "random_values", "random values", "units",
+			result.data_view.get()
+		)};
+	return result;
+}
+
+auto make_element_wise_variables(
+	t8_locidx_t num_local_elements, int num_element_wise_variables
+) {
+	std::vector<element_wise_variable> element_wise_variables(
+		num_element_wise_variables
+	);
+	std::mt19937_64 rne;
+	for (auto& variable : element_wise_variables) {
+		variable = make_element_wise_variable(num_local_elements, rne);
+	}
+	return element_wise_variables;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -163,15 +224,19 @@ int main(int argc, char** argv) {
 
 		auto forest = config.scenario->make_forest();
 
-		add_variables(config.num_element_wise_variables, forest);
+		auto element_wise_variables = make_element_wise_variables(
+			t8_forest_get_local_num_elements(forest),
+			config.num_element_wise_variables
+		);
 
-		time_writing_netcdf(config, forest);
+		time_writing_netcdf(config, forest, element_wise_variables);
 
 	} catch (const std::exception& e) {
 		t8_productionf(e.what());
 		exit_code = EXIT_FAILURE;
 	}
 
+	// TODO forest is not known here
 	unref(forest);
 
 	sc_finalize();
