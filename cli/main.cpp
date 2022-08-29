@@ -39,8 +39,8 @@ auto parse_args(int argc, char** argv) {
 
 	int fill = 0;
 	int num_element_wise_variables = 0;
-	const char* storage_mode = "chunked";
-	const char* mpi_access = "collective";
+	const char* storage_mode = "NC_CHUNKED";
+	const char* mpi_access = "NC_COLLECTIVE";
 	const char* netcdf_ver = "netcdf4_hdf5";
 	const char* scenario_name = "pseudo_random";
 
@@ -49,11 +49,11 @@ auto parse_args(int argc, char** argv) {
 	// add common args:
 	sc_options_add_switch(opts.get(), 'f', "fill", &fill, "Activate NC_FILL");
 	sc_options_add_string(
-		opts.get(), 's', "storage_mode", &storage_mode, "chunked",
+		opts.get(), 's', "storage_mode", &storage_mode, "NC_CHUNKED",
 		"storage mode"
 	);
 	sc_options_add_string(
-		opts.get(), 'm', "mpi_access", &mpi_access, "collective", "mpi access"
+		opts.get(), 'm', "mpi_access", &mpi_access, "NC_COLLECTIVE", "mpi access"
 	);
 	sc_options_add_string(
 		opts.get(), 'c', "netcdf_version", &netcdf_ver, "netcdf4_hdf5",
@@ -121,9 +121,9 @@ auto parse_args(int argc, char** argv) {
 		throw std::runtime_error{
 			"storage mode must be one of NC_CONTIGUOUS and NC_CHUNKED"};
 	}
-	if (netcdf_ver == "cdf5") {
+	if (netcdf_ver == "cdf5"sv) {
 		config.cmode = NC_64BIT_DATA;
-	} else if (netcdf_ver == "netcdf4_hdf5") {
+	} else if (netcdf_ver == "netcdf4_hdf5"sv) {
 		config.cmode = NC_NETCDF4;
 	} else {
 		throw std::runtime_error{
@@ -217,6 +217,10 @@ auto make_element_wise_variables(
 	return element_wise_variables;
 }
 
+auto calculate_actual_storage(t8_forest_t forest, int num_element_wise_variables) {
+	
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -236,12 +240,12 @@ int main(int argc, char** argv) {
 
 		forest = config.scenario->make_forest(sc_MPI_COMM_WORLD);
 
-		// const auto storage =
-		// 	calculate_actual_storage(forest, config.num_element_wise_variables);
+		const auto storage =
+			calculate_actual_storage(forest, config.num_element_wise_variables);
 
-		// if (mpirank == 0) {
-		// 	print_storage(storage)
-		// }
+		if (mpirank == 0) {
+			print_storage(storage)
+		}
 
 		auto element_wise_variables = make_element_wise_variables(
 			t8_forest_get_local_num_elements(forest),
@@ -251,7 +255,7 @@ int main(int argc, char** argv) {
 		const auto time_taken =
 			time_writing_netcdf(forest, sc_MPI_COMM_WORLD, config, element_wise_variables);
 
-		t8_productionf("%f", time_taken);
+		t8_global_productionf("%f\n", time_taken);
 
 	} catch (const std::exception& e) {
 		t8_productionf(e.what());

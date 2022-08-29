@@ -2,8 +2,9 @@
 !*/
 
 !.gitignore
-!cli
-cli/build
+!cli/**/*
+cli/build/
+!.clang-format
 !COPYING
 !extract.py
 !launch.py
