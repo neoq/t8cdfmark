@@ -1,5 +1,10 @@
 #include "pseudo_random.hpp"
 
+#include <t8_cmesh/t8_cmesh_examples.h>
+#include <t8_schemes/t8_default/t8_default_cxx.hxx>
+
+#include <random>
+
 namespace {
 
 /** calculates the minimum count of elements needed to consume bytes bytes
@@ -65,7 +70,7 @@ struct adapt_user_data {
 
 /** models t8_forest_adapt_t. Pseudorandomly refines elements according to the
  * given ratio. */
-int t8_example_netcdf_adapt_fn(
+int pseudo_random_adapt_fn(
 	t8_forest_t forest, t8_forest_t forest_from, t8_locidx_t which_tree,
 	t8_locidx_t lelement_id, t8_eclass_scheme_c* ts, const int is_family,
 	const int num_elements, t8_element_t* elements[]
@@ -82,22 +87,22 @@ int t8_example_netcdf_adapt_fn(
 } // namespace
 
 namespace scenarios {
-unique_ptr_sc_options_t pseudo_random::make_options() override {
-	auto opts = unique_ptr_sc_options_t{sc_new_options_new("")};
+t8cdfmark::unique_ptr_sc_options_t pseudo_random::make_options() {
+	auto opts = t8cdfmark::unique_ptr_sc_options_t{sc_options_new("")};
 	sc_options_add_size_t(
 		opts.get(), 'b', "bytes", &desired_bytes, 1'073'741'824u,
 		"desired bytes"
 	);
 	return opts;
 }
-t8_forest_t pseudo_random::make_forest(sc_MPI_Comm comm) const override {
+t8_forest_t pseudo_random::make_forest(sc_MPI_Comm comm) const {
 	const auto refinement_config = config_for_bytes(desired_bytes);
 
 	/* Build a (partitioned) uniform forest */
 	t8_forest_t uniform = t8_forest_new_uniform(
 		/* Construct a 3D hybrid hypercube as a cmesh */
 		t8_cmesh_new_hypercube_hybrid(comm, 1, 0), t8_scheme_new_default_cxx(),
-		refinement_config.initial_refinement, false, comm
+		refinement_config.initial, false, comm
 	);
 
 	adapt_user_data adapt_data{

@@ -1,23 +1,26 @@
 
 
-#include <mpi.h>
 #include <netcdf.h>
+#include <netcdf_par.h>
 #include <sc_options.h>
 #include <t8.h>
+#include <t8_forest_netcdf.h>
 
 #include "get_scenarios.hpp"
 #include "scenarios/scenario.hpp"
 #include "utils.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <random>
 #include <string_view>
 #include <vector>
 
-using std::string_view_literals;
+using namespace std::string_view_literals;
 
 namespace {
 
@@ -27,11 +30,12 @@ struct Config {
 	int netcdf_mpi_access = NC_COLLECTIVE;
 	int fill_mode;
 	int cmode;
+	int num_element_wise_variables = 0;
 	bool file_per_process_mode = false;
 };
 
 auto parse_args(int argc, char** argv) {
-	auto opts = t8cdfmark::new_sc_options(argv[0]);
+	auto opts = t8cdfmark::unique_ptr_sc_options_t(sc_options_new(argv[0]));
 
 	int fill = 0;
 	int num_element_wise_variables = 0;
@@ -63,12 +67,12 @@ auto parse_args(int argc, char** argv) {
 		&num_element_wise_variables, 0, "num_element_wise_variables"
 	);
 
-	auto scenarios = get_scenarios();
+	auto scenarios = t8cdfmark::get_scenarios();
 	for (const auto& scenario : scenarios) {
 		auto scenario_opts = scenario->make_options();
 		// i think this function copies the options and does not take ownership
 		sc_options_add_suboptions(
-			opts.get(), scenario_opts.get(), scenario->id.c_str()
+			opts.get(), scenario_opts.get(), scenario->name.c_str()
 		);
 	}
 
@@ -87,7 +91,7 @@ auto parse_args(int argc, char** argv) {
 	auto matched_scenario_it = std::find_if(
 		scenarios.begin(), scenarios.end(),
 		[scenario_name](auto& scenario) {
-			return scenario->id == scenario_name;
+			return scenario->name == scenario_name;
 		}
 	);
 	if (matched_scenario_it == scenarios.end()) {
@@ -95,8 +99,9 @@ auto parse_args(int argc, char** argv) {
 	}
 
 	Config config{
+		.scenario = std::move(*matched_scenario_it),
 		.fill_mode = fill ? NC_FILL : NC_NOFILL,
-		.scenario = std::move(*matched_scenario_it)};
+		.num_element_wise_variables = num_element_wise_variables};
 
 	if (mpi_access == "NC_INDEPENDENT"sv) {
 		config.netcdf_mpi_access = NC_INDEPENDENT;
@@ -134,8 +139,8 @@ struct element_wise_variable {
 	t8cdfmark::unique_ptr_t8_netcdf_variable_t netcdf_variable;
 };
 
-auto time_netcdf_writing(
-	t8_forest_t forest, sc_MPI_Comm comm, Config config,
+auto time_writing_netcdf(
+	t8_forest_t forest, sc_MPI_Comm comm, const Config& config,
 	const std::vector<element_wise_variable>& element_wise_variables
 ) {
 	std::vector<t8_netcdf_variable_t*> netcdf_variables(
@@ -163,13 +168,14 @@ auto time_netcdf_writing(
 
 	const auto end_time = sc_MPI_Wtime();
 	const double seconds = end_time - start_time;
-	double global_seconds_max;
+	double global_seconds_max = NAN;
 	int retval = sc_MPI_Reduce(
 		&seconds, &global_seconds_max, 1, sc_MPI_DOUBLE, sc_MPI_MAX, 0, comm
 	);
-	if (retval != MPI::SUCCESS) {
+	if (retval != sc_MPI_SUCCESS) {
 		throw std::runtime_error{"failed calculating the total runtime"};
 	}
+	return global_seconds_max;
 }
 
 template <typename Rne>
@@ -221,16 +227,31 @@ int main(int argc, char** argv) {
 
 	t8_forest_t forest = nullptr;
 	try {
+		int mpirank;
+		if (sc_MPI_Comm_rank(sc_MPI_COMM_WORLD, &mpirank) != sc_MPI_SUCCESS) {
+			throw std::runtime_error{"failed to determine rank"};
+		}
+
 		auto config = parse_args(argc, argv);
 
-		forest = config.scenario->make_forest();
+		forest = config.scenario->make_forest(sc_MPI_COMM_WORLD);
+
+		// const auto storage =
+		// 	calculate_actual_storage(forest, config.num_element_wise_variables);
+
+		// if (mpirank == 0) {
+		// 	print_storage(storage)
+		// }
 
 		auto element_wise_variables = make_element_wise_variables(
 			t8_forest_get_local_num_elements(forest),
 			config.num_element_wise_variables
 		);
 
-		time_writing_netcdf(config, forest, element_wise_variables);
+		const auto time_taken =
+			time_writing_netcdf(forest, sc_MPI_COMM_WORLD, config, element_wise_variables);
+
+		t8_productionf("%f", time_taken);
 
 	} catch (const std::exception& e) {
 		t8_productionf(e.what());

@@ -20,7 +20,7 @@ struct sc_array_t_deleter {
 using unique_ptr_sc_array_t = std::unique_ptr<sc_array_t, sc_array_t_deleter>;
 struct t8_netcdf_variable_t_deleter {
 	void operator()(t8_netcdf_variable_t* netcdf_variable) const {
-		sc_array_destroy(netcdf_variable);
+		t8_netcdf_variable_destroy(netcdf_variable);
 	}
 };
 using unique_ptr_t8_netcdf_variable_t =

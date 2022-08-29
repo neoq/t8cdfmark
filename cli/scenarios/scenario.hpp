@@ -5,6 +5,7 @@
 #include <netcdf.h>
 #include <sc_options.h>
 #include <t8.h>
+#include <t8_forest.h>
 
 #include "../utils.hpp"
 

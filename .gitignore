@@ -1,0 +1,10 @@
+*
+!*/
+
+!.gitignore
+!cli
+cli/build
+!COPYING
+!extract.py
+!launch.py
+!README.md
