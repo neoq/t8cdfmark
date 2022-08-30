@@ -28,6 +28,7 @@
 using namespace std::string_view_literals;
 
 namespace {
+constexpr auto result_fname = "results.json";
 
 struct Config {
 	std::unique_ptr<t8cdfmark::Scenario> scenario;
@@ -285,7 +286,7 @@ long long calculate_actual_storage(
 
 template <typename Sec, typename Bytes>
 auto output_results(Sec seconds, Bytes storage) {
-	std::ofstream results{"results.json"};
+	std::ofstream results{result_fname};
 	// enough digits to achieve exact rountrip conversion
 	results << std::setprecision(std::numeric_limits<double>::max_digits10)
 			<< R"({"actual_information_bytes":)" << storage << R"(,"seconds":)"
@@ -326,11 +327,11 @@ int main(int argc, char** argv) {
 			config.num_element_wise_variables
 		);
 
-		const auto time_taken = time_writing_netcdf(
+		const double time_taken = time_writing_netcdf(
 			forest, sc_MPI_COMM_WORLD, config, element_wise_variables
 		);
 
-		t8_global_productionf("%f\n", time_taken);
+		t8_global_productionf("took %fs. Results written to %s\n", time_taken, result_fname);
 		if (mpirank == 0) {
 			output_results(time_taken, storage);
 		}

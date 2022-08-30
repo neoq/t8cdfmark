@@ -8,4 +8,5 @@ cli/build/
 !COPYING
 !extract.py
 !launch.py
+!config.py
 !README.md
