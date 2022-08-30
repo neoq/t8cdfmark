@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -225,7 +226,7 @@ auto get_local_num_nodes(t8_forest_t forest) {
 	std::ptrdiff_t num_local_nodes = 0;
 	const auto num_local_trees = t8_forest_get_num_local_trees(forest);
 	for (t8_locidx_t ltree_id = 0; ltree_id < num_local_trees; ++ltree_id) {
-		t8_eclass_scheme_c* scheme = t8_forest_get_eclass_scheme(
+		const auto scheme = t8_forest_get_eclass_scheme(
 			forest, t8_forest_get_tree_class(forest, ltree_id)
 		);
 		const auto num_local_tree_elem =
@@ -252,15 +253,34 @@ auto get_global_num_nodes(t8_forest_t forest) {
 	// TODO: error handling
 	const auto mpi_status = sc_MPI_Reduce(
 		&local_num_nodes, &global_num_nodes, 1, sc_MPI_LONG_LONG_INT,
-		sc_MPI_MAX, 0, t8_forest_get_mpicomm(forest)
+		sc_MPI_SUM, 0, t8_forest_get_mpicomm(forest)
 	);
 	return global_num_nodes;
 }
 
-auto calculate_actual_storage(
-	t8_forest_t forest, int num_element_wise_variables
+/*
+ * collective
+ */
+long long calculate_actual_storage(
+	t8_forest_t forest, int num_element_wise_variables, int mpirank
 ) {
-	// get_global_num_nodes(forest)
+	const long long nMesh3D_node = get_global_num_nodes(forest);
+	t8_global_productionf("forest has %lld nodes\n", nMesh3D_node);
+	const long long nMesh3D_vol = t8_forest_get_global_num_elements(forest);
+	if (mpirank == 0) {
+		return nMesh3D_vol * 4 + nMesh3D_vol * 8 + nMesh3D_vol * 8 * 8 +
+		       3 * nMesh3D_node * 8 +
+		       num_element_wise_variables * nMesh3D_vol * 8;
+	}
+	return 0;
+}
+
+template <typename Sec, typename Bytes>
+auto output_results(Sec seconds, Bytes storage) {
+	std::ofstream results{"results.json"};
+	results << R"({"actual_information_bytes":)" << storage << R"(,"seconds":)"
+			<< seconds << R"(,"throughput_B/s":)" << (double(storage) / seconds)
+			<< '}';
 }
 
 } // namespace
@@ -282,12 +302,14 @@ int main(int argc, char** argv) {
 
 		forest = config.scenario->make_forest(sc_MPI_COMM_WORLD);
 
-		// const auto storage =
-		// 	calculate_actual_storage(forest, config.num_element_wise_variables);
+		const long long storage = calculate_actual_storage(
+			forest, config.num_element_wise_variables, mpirank
+		);
 
-		// if (mpirank == 0) {
-		// 	print_storage(storage)
-		// }
+		t8_global_productionf(
+			"the constructed forest will consume approximately %lld bytes\n",
+			storage
+		);
 
 		auto element_wise_variables = make_element_wise_variables(
 			t8_forest_get_local_num_elements(forest),
@@ -299,6 +321,9 @@ int main(int argc, char** argv) {
 		);
 
 		t8_global_productionf("%f\n", time_taken);
+		if (mpirank == 0) {
+			output_results(time_taken, storage);
+		}
 
 	} catch (const std::exception& e) {
 		t8_productionf(e.what());
