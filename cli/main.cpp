@@ -310,7 +310,7 @@ int main(int argc, char** argv) {
 
 		auto config = parse_args(argc, argv);
 
-		forest = config.scenario->make_forest(sc_MPI_COMM_WORLD);
+		forest = config.scenario->make_forest(sc_MPI_COMM_WORLD, config.num_element_wise_variables);
 
 		const long long storage = calculate_actual_storage(
 			forest, config.num_element_wise_variables, mpirank

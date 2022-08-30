@@ -10,17 +10,20 @@ namespace {
 /** calculates the minimum count of elements needed to consume bytes bytes
  * \param [in] bytes the requested storage
  */
-double elements_needed_for_bytes(long long bytes) {
+double
+elements_needed_for_bytes(long long bytes, int num_element_wise_variables) {
 	/* the total forest storage is derived from the ugrid conventions:
 	   nMaxMesh3D_vol_nodes = 8
 	   nMesh3D_node <= nMesh3D_vol * nMaxMesh3D_vol_nodes
 	   `storage = Mesh3D_vol_types + Mesh3D_vol_tree_id + Mesh3D_vol_nodes +
-	   Mesh3D_node_x + Mesh3D_node_y + Mesh3D_node_z` `storage = nMesh3D_vol * 4
+	   Mesh3D_node_x + Mesh3D_node_y + Mesh3D_node_z + ElementWiseVariables...`
+	   `storage = nMesh3D_vol * 4
 	   + nMesh3D_vol * 8 + nMesh3D_vol * nMaxMesh3D_vol_nodes * 8 + 3 *
-	   (nMesh3D_node * 8)` we don't know the node count of each volume. `storage
-	   <= nMesh3D_vol * (4 + 8 + 64 + 192)` `nMesh3D_vol >= storage / 268`
+	   (nMesh3D_node * 8) + num_element_wise_variables * 8 * nMesh3D_vol` we
+	   don't know the node count of each volume. `storage
+	   <= nMesh3D_vol * (4 + 8 + 64 + 192 + num_element_wise_variables * 8)` `nMesh3D_vol >= storage / 268`
 	 */
-	return bytes / 268.0;
+	return bytes / (268.0 + num_element_wise_variables * 8);
 }
 
 /** This struct contains the refinement information needed to produce a
@@ -36,9 +39,11 @@ struct RefinementConfig {
  * coordinate storage. \param [in] bytes the desired total storage size of a
  * forest created with the returned RefinementConfig
  */
-RefinementConfig config_for_bytes(long long bytes) {
+RefinementConfig
+config_for_bytes(long long bytes, int num_element_wise_variables) {
 	/* calculate how many volumes/elements we need: */
-	const double nMesh3D_vol = elements_needed_for_bytes(bytes);
+	const double nMesh3D_vol =
+		elements_needed_for_bytes(bytes, num_element_wise_variables);
 
 	/* calculate config to get that many elements. Derivation:
 	   i = initial_refinement; a = ratio of further refined
@@ -95,8 +100,11 @@ t8cdfmark::unique_ptr_sc_options_t pseudo_random::make_options() {
 	);
 	return opts;
 }
-t8_forest_t pseudo_random::make_forest(sc_MPI_Comm comm) const {
-	const auto refinement_config = config_for_bytes(desired_bytes);
+t8_forest_t pseudo_random::make_forest(
+	sc_MPI_Comm comm, int num_element_wise_variables
+) const {
+	const auto refinement_config =
+		config_for_bytes(desired_bytes, num_element_wise_variables);
 
 	/* Build a (partitioned) uniform forest */
 	t8_forest_t uniform = t8_forest_new_uniform(
