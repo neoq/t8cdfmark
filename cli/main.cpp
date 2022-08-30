@@ -142,6 +142,7 @@ struct element_wise_variable {
 	std::vector<t8_nc_int64_t> data;
 	t8cdfmark::unique_ptr_sc_array_t data_view;
 	t8cdfmark::unique_ptr_t8_netcdf_variable_t netcdf_variable;
+	std::unique_ptr<std::string> var_name;
 };
 
 auto time_writing_netcdf(
@@ -184,9 +185,12 @@ auto time_writing_netcdf(
 }
 
 template <typename Rne>
-auto make_element_wise_variable(t8_locidx_t num_local_elements, Rne& rne) {
+auto make_element_wise_variable(
+	t8_locidx_t num_local_elements, Rne& rne, std::string var_name
+) {
 	element_wise_variable result{
-		std::vector<t8_nc_int64_t>(num_local_elements)};
+		.data = std::vector<t8_nc_int64_t>(num_local_elements),
+		.var_name = std::make_unique<std::string>(std::move(var_name))};
 
 	{
 		auto dist = std::uniform_int_distribution<long long>{
@@ -203,7 +207,7 @@ auto make_element_wise_variable(t8_locidx_t num_local_elements, Rne& rne) {
 	)};
 	result.netcdf_variable =
 		t8cdfmark::unique_ptr_t8_netcdf_variable_t{t8_netcdf_create_var(
-			T8_NETCDF_INT64, "random_values", "random values", "units",
+			T8_NETCDF_INT64, result.var_name->c_str(), "random values", "units",
 			result.data_view.get()
 		)};
 	return result;
@@ -216,8 +220,11 @@ auto make_element_wise_variables(
 		num_element_wise_variables
 	);
 	std::mt19937_64 rne;
+	std::ptrdiff_t i = 0;
 	for (auto& variable : element_wise_variables) {
-		variable = make_element_wise_variable(num_local_elements, rne);
+		variable = make_element_wise_variable(
+			num_local_elements, rne, "random_values" + std::to_string(i++)
+		);
 	}
 	return element_wise_variables;
 }
