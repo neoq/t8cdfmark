@@ -17,6 +17,7 @@
 #include <cmath>
 #include <cstdio>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -285,7 +286,9 @@ long long calculate_actual_storage(
 template <typename Sec, typename Bytes>
 auto output_results(Sec seconds, Bytes storage) {
 	std::ofstream results{"results.json"};
-	results << R"({"actual_information_bytes":)" << storage << R"(,"seconds":)"
+	// enough digits to achieve exact rountrip conversion
+	results << std::setprecision(std::numeric_limits<double>::max_digits10)
+			<< R"({"actual_information_bytes":)" << storage << R"(,"seconds":)"
 			<< seconds << R"(,"throughput_B/s":)" << (double(storage) / seconds)
 			<< '}';
 }
