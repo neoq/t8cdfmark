@@ -6,6 +6,9 @@
 #include <t8.h>
 #include <t8_forest_netcdf.h>
 
+// for node calc
+#include <t8_element_cxx.hxx>
+
 #include "get_scenarios.hpp"
 #include "scenarios/scenario.hpp"
 #include "utils.hpp"
@@ -53,7 +56,8 @@ auto parse_args(int argc, char** argv) {
 		"storage mode"
 	);
 	sc_options_add_string(
-		opts.get(), 'm', "mpi_access", &mpi_access, "NC_COLLECTIVE", "mpi access"
+		opts.get(), 'm', "mpi_access", &mpi_access, "NC_COLLECTIVE",
+		"mpi access"
 	);
 	sc_options_add_string(
 		opts.get(), 'c', "netcdf_version", &netcdf_ver, "netcdf4_hdf5",
@@ -169,10 +173,10 @@ auto time_writing_netcdf(
 	const auto end_time = sc_MPI_Wtime();
 	const double seconds = end_time - start_time;
 	double global_seconds_max = NAN;
-	int retval = sc_MPI_Reduce(
+	const auto mpi_status = sc_MPI_Reduce(
 		&seconds, &global_seconds_max, 1, sc_MPI_DOUBLE, sc_MPI_MAX, 0, comm
 	);
-	if (retval != sc_MPI_SUCCESS) {
+	if (mpi_status != sc_MPI_SUCCESS) {
 		throw std::runtime_error{"failed calculating the total runtime"};
 	}
 	return global_seconds_max;
@@ -217,8 +221,46 @@ auto make_element_wise_variables(
 	return element_wise_variables;
 }
 
-auto calculate_actual_storage(t8_forest_t forest, int num_element_wise_variables) {
-	
+auto get_local_num_nodes(t8_forest_t forest) {
+	std::ptrdiff_t num_local_nodes = 0;
+	const auto num_local_trees = t8_forest_get_num_local_trees(forest);
+	for (t8_locidx_t ltree_id = 0; ltree_id < num_local_trees; ++ltree_id) {
+		t8_eclass_scheme_c* scheme = t8_forest_get_eclass_scheme(
+			forest, t8_forest_get_tree_class(forest, ltree_id)
+		);
+		const auto num_local_tree_elem =
+			t8_forest_get_tree_num_elements(forest, ltree_id);
+		for (t8_locidx_t local_elem_id = 0; local_elem_id < num_local_tree_elem;
+		     ++local_elem_id) {
+			num_local_nodes += t8_element_shape_num_vertices(
+				scheme->t8_element_shape(t8_forest_get_element_in_tree(
+					forest, ltree_id, local_elem_id
+				))
+			);
+		}
+	}
+
+	return num_local_nodes;
+}
+
+/*
+ * collective
+ */
+auto get_global_num_nodes(t8_forest_t forest) {
+	const long long local_num_nodes = get_local_num_nodes(forest);
+	long long global_num_nodes = 0;
+	// TODO: error handling
+	const auto mpi_status = sc_MPI_Reduce(
+		&local_num_nodes, &global_num_nodes, 1, sc_MPI_LONG_LONG_INT,
+		sc_MPI_MAX, 0, t8_forest_get_mpicomm(forest)
+	);
+	return global_num_nodes;
+}
+
+auto calculate_actual_storage(
+	t8_forest_t forest, int num_element_wise_variables
+) {
+	// get_global_num_nodes(forest)
 }
 
 } // namespace
@@ -240,20 +282,21 @@ int main(int argc, char** argv) {
 
 		forest = config.scenario->make_forest(sc_MPI_COMM_WORLD);
 
-		const auto storage =
-			calculate_actual_storage(forest, config.num_element_wise_variables);
+		// const auto storage =
+		// 	calculate_actual_storage(forest, config.num_element_wise_variables);
 
-		if (mpirank == 0) {
-			print_storage(storage)
-		}
+		// if (mpirank == 0) {
+		// 	print_storage(storage)
+		// }
 
 		auto element_wise_variables = make_element_wise_variables(
 			t8_forest_get_local_num_elements(forest),
 			config.num_element_wise_variables
 		);
 
-		const auto time_taken =
-			time_writing_netcdf(forest, sc_MPI_COMM_WORLD, config, element_wise_variables);
+		const auto time_taken = time_writing_netcdf(
+			forest, sc_MPI_COMM_WORLD, config, element_wise_variables
+		);
 
 		t8_global_productionf("%f\n", time_taken);
 
