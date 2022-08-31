@@ -4,6 +4,7 @@
 !.gitignore
 !cli/**/*
 cli/build/
+!multibenchmark/**/*
 !.clang-format
 !COPYING
 !extract.py
