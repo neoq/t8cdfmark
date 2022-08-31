@@ -311,7 +311,9 @@ int main(int argc, char** argv) {
 
 		auto config = parse_args(argc, argv);
 
-		forest = config.scenario->make_forest(sc_MPI_COMM_WORLD, config.num_element_wise_variables);
+		forest = config.scenario->make_forest(
+			sc_MPI_COMM_WORLD, config.num_element_wise_variables
+		);
 
 		const long long storage = calculate_actual_storage(
 			forest, config.num_element_wise_variables, mpirank
@@ -327,17 +329,21 @@ int main(int argc, char** argv) {
 			config.num_element_wise_variables
 		);
 
+		t8_global_productionf("finished creating element wise variables\n");
+
 		const double time_taken = time_writing_netcdf(
 			forest, sc_MPI_COMM_WORLD, config, element_wise_variables
 		);
 
-		t8_global_productionf("took %fs. Results written to %s\n", time_taken, result_fname);
+		t8_global_productionf(
+			"took %fs. Results written to %s\n", time_taken, result_fname
+		);
 		if (mpirank == 0) {
 			output_results(time_taken, storage);
 		}
 
 	} catch (const std::exception& e) {
-		t8_productionf(e.what());
+		t8_global_productionf(e.what());
 		exit_code = EXIT_FAILURE;
 	}
 

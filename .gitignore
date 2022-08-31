@@ -5,6 +5,7 @@
 !cli/**/*
 cli/build/
 !multibenchmark/**/*
+multibenchmark/__pycache__/
 !.clang-format
 !COPYING
 !extract.py
