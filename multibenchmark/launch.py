@@ -5,7 +5,7 @@ import os
 import config
 
 job_id = None
-for c in set(config.configurations()):
+for c in list(dict.fromkeys(config.configurations())):
 	print(f"scheduling {c}")
 	workdir = pathlib.Path(f"nodes{c.nodes}-tasks_per_node{c.tasks_per_node}/{c.cmode}-{c.storage_mode}-{c.comm_mode}-{c.num_element_wise_variables}-{c.bytes_hint}/{c.repetition}")
 	os.makedirs(workdir, exist_ok=True)

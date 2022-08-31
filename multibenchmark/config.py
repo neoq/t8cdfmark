@@ -24,5 +24,5 @@ def configurations():
 				for cmode in ["netcdf4_hdf5", "cdf5"]:
 					if cmode == "cdf5" and comm_mode != "file_per_process":
 						continue
-					yield Config(repetition=repetition, nodes=64, tasks_per_node=20, storage_mode=storage_mode, cmode=cmode, comm_mode=comm_mode, num_element_wise_variables=300, bytes_hint=1000000000000)
+					yield Config(repetition=repetition, nodes=64, tasks_per_node=5, storage_mode=storage_mode, cmode=cmode, comm_mode=comm_mode, num_element_wise_variables=300, bytes_hint=1000000000000)
 		
