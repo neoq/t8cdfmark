@@ -10,14 +10,15 @@ for c in list(dict.fromkeys(config.configurations())):
 	workdir = pathlib.Path(f"nodes{c.nodes}-tasks_per_node{c.tasks_per_node}/{c.cmode}-{c.storage_mode}-{c.comm_mode}-{c.num_element_wise_variables}-{c.bytes_hint}/{c.repetition}")
 	os.makedirs(workdir, exist_ok=True)
 	if (workdir/"success").is_file():
+		print(f"skipping {c}")
 		continue
 	
-	benchmark_command = f"module load netcdf-c openmpi; srun {config.benchmark_executable_path} --num_element_wise_variables={c.num_element_wise_variables} --pseudo_random:bytes={c.bytes_hint} --netcdf_version={c.cmode} --storage_mode={c.storage_mode} --mpi_access={c.comm_mode} && echo 1 >success; du -c --apparent-size --block-size=1 t8_netcdf_performance_test.nc* >apparent_storage; du -c --block-size=1 t8_netcdf_performance_test.nc* >storage"
+	benchmark_command = f"module load netcdf-c openmpi; srun {config.benchmark_executable_path} --num_element_wise_variables={c.num_element_wise_variables} --pseudo_random:bytes={c.bytes_hint} --netcdf_version={c.cmode} --storage_mode={c.storage_mode} --mpi_access={c.comm_mode} && echo 1 >success; du -c --apparent-size --block-size=1 t8_netcdf_performance_test* >apparent_storage; du -c --block-size=1 t8_netcdf_performance_test* >storage"
 	sbatch_command = [
 		"sbatch",
 		"--parsable",
-		"--time=20:00",
-		f"--mem-per-cpu={max(c.bytes_hint//(c.tasks_per_node * c.nodes * 1000),10000)}KB",
+		"--time=10:00",
+		f"--mem-per-cpu={max(c.bytes_hint*2//(c.tasks_per_node * c.nodes * 1000),10000)}KB",
 		"--constraint=scratch",
 		f"--nodes={c.nodes}",
 		f"--ntasks-per-node={c.tasks_per_node}",
@@ -36,9 +37,9 @@ for c in list(dict.fromkeys(config.configurations())):
 	sbatch_cleanup_command = [
 		"sbatch",
 		"--parsable",
-		"--time=10:00",
+		"--time=5:00",
 		"--constraint=scratch",
-		"--wrap=rm t8_netcdf_performance_test.nc*",
+		"--wrap=find -name \"t8_netcdf_performance_test*\" -delete",
 		f"--dependency=afterany:{job_id}"
 	]
 
@@ -48,3 +49,4 @@ for c in list(dict.fromkeys(config.configurations())):
 		print(e.stdout, e.stderr)
 		raise
 	job_id = int(sbatch_cleanup.stdout)
+
