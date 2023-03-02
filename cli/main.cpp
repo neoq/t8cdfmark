@@ -167,7 +167,7 @@ auto time_writing_netcdf(
 	const auto start_time = sc_MPI_Wtime();
 
 	t8_forest_write_netcdf_ext(
-		forest, "t8_netcdf_performance_test",
+		forest, "esdm://t8_netcdf_performance_test",
 		"T8 NetCDF writing Performance Test", 3, netcdf_variables.size(),
 		netcdf_variables.data(), comm, config.netcdf_var_storage_mode, nullptr,
 		config.netcdf_mpi_access, config.fill_mode, config.cmode,
